@@ -1,0 +1,16 @@
+{
+  "name": "entrega-1-tests",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 *.test.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.8.1"
+  }
+}

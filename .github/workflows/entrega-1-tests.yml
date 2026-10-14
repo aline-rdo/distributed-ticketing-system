@@ -1,0 +1,33 @@
+name: Entrega 1 - gRPC
+
+on:
+  push:
+    branches: [entrega-1]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            tests/entrega-1/package-lock.json
+            microservices/*/package-lock.json
+
+      - name: Instalar dependências
+        run: |
+          npm ci --prefix tests/entrega-1
+          for service in analytics-service email-service payment-service tickets-service; do
+            npm ci --prefix "microservices/$service"
+          done
+
+      - name: Verificar entrega 1
+        run: npm test --prefix tests/entrega-1

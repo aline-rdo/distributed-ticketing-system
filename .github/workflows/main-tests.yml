@@ -1,0 +1,32 @@
+name: Main tests
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: microservices/*/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          for service in analytics-service email-service payment-service tickets-service; do
+            npm ci --prefix "microservices/$service" --no-audit --no-fund
+          done
+
+      - name: Run main tests
+        run: node --test tests/main/*.test.mjs

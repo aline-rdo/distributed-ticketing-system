@@ -1,0 +1,57 @@
+name: Entrega 2 - Kubernetes
+
+on:
+  push:
+    branches: [entrega-2]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            microservices/*/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar Podman, kind e kubectl
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes podman uidmap slirp4netns
+          curl --fail --location --output /tmp/kind https://kind.sigs.k8s.io/dl/v0.30.0/kind-linux-amd64
+          sudo install --mode=0755 /tmp/kind /usr/local/bin/kind
+          curl --fail --location --output /tmp/kubectl https://dl.k8s.io/release/v1.33.4/bin/linux/amd64/kubectl
+          sudo install --mode=0755 /tmp/kubectl /usr/local/bin/kubectl
+          podman info
+          kind version
+          kubectl version --client
+
+      - name: Criar cluster kind com Podman
+        env:
+          KIND_EXPERIMENTAL_PROVIDER: podman
+        run: kind create cluster --name cin0143 --wait 60s
+
+      - name: Verificar scripts Python
+        run: python3 -m unittest tests/entrega-2/test_scripts.py -v
+
+      - name: Preparar aplicacao no Kubernetes
+        run: python3 tests/entrega-2/setup_k8s.py
+
+      - name: Exibir recursos Kubernetes
+        run: |
+          kubectl get deployments
+          kubectl get pods
+          kubectl get services
+          kubectl get endpointslices

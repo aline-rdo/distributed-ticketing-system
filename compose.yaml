@@ -1,0 +1,118 @@
+services:
+  frontend:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.20"
+          memory: 64M
+        limits:
+          cpus: "0.30"
+          memory: 256M
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_PAYMENT_URL: ${NEXT_PUBLIC_PAYMENT_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      payment-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  payment-service:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.20"
+          memory: 64M
+        limits:
+          cpus: "0.30"
+          memory: 256M
+    build: ./microservices/payment-service
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: 8000
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      TICKETS_SERVICE_URL: http://tickets-service:8001
+      ANALYTICS_SERVICE_URL: http://analytics-service:8003
+    depends_on:
+      tickets-service:
+        condition: service_healthy
+      analytics-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  tickets-service:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.20"
+          memory: 64M
+        limits:
+          cpus: "0.30"
+          memory: 256M
+    build: ./microservices/tickets-service
+    environment:
+      PORT: 8001
+      EMAIL_SERVICE_URL: http://email-service:8002
+      ANALYTICS_SERVICE_URL: http://analytics-service:8003
+    depends_on:
+      email-service:
+        condition: service_healthy
+      analytics-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  email-service:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.20"
+          memory: 64M
+        limits:
+          cpus: "0.30"
+          memory: 256M
+    build: ./microservices/email-service
+    environment:
+      PORT: 8002
+      ANALYTICS_SERVICE_URL: http://analytics-service:8003
+    depends_on:
+      analytics-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8002/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  analytics-service:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.20"
+          memory: 64M
+        limits:
+          cpus: "0.30"
+          memory: 256M
+    build: ./microservices/analytics-service
+    environment:
+      PORT: 8003
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8003/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
