@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package cin0143.entrega1;
+
+message CartItem {
+  int32 id = 1;
+  string name = 2;
+  double price = 3;
+  string image = 4;
+  string date = 5;
+  string category = 6;
+  string location = 7;
+  string description = 8;
+}
+
+message CreateTicketRequest {
+  string userId = 1;
+  repeated CartItem cart = 2;
+}
+
+message CreateTicketResponse {
+  string ticketId = 1;
+  string ticketResult = 2;
+  string emailResult = 3;
+}
+
+message SendEmailRequest {
+  string userId = 1;
+  string ticketId = 2;
+  string ticketResult = 3;
+}
+
+message SendEmailResponse {
+  string emailResult = 1;
+}
+
+message PaymentEvent {
+  string userId = 1;
+  repeated CartItem cart = 2;
+  double total = 3;
+  string paymentResult = 4;
+}
+
+message TicketEvent {
+  string userId = 1;
+  string ticketId = 2;
+  string ticketResult = 3;
+}
+
+message EmailEvent {
+  string userId = 1;
+  string ticketId = 2;
+  string emailResult = 3;
+}
+
+message RecordEventRequest {
+  string type = 1;
+  oneof data {
+    PaymentEvent payment = 2;
+    TicketEvent ticket = 3;
+    EmailEvent email = 4;
+  }
+}
+
+message RecordEventResponse {
+  string status = 1;
+}
+
+service TicketsService {
+  rpc CreateTicket(CreateTicketRequest) returns (CreateTicketResponse);
+}
+
+service EmailService {
+  rpc SendEmail(SendEmailRequest) returns (SendEmailResponse);
+}
+
+service AnalyticsService {
+  rpc RecordEvent(RecordEventRequest) returns (RecordEventResponse);
+}
