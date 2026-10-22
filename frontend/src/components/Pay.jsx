@@ -26,8 +26,7 @@ const Pay = ({ cart }) => {
         {
           cart,
           total,
-        },
-        { timeout: 30000 }
+        }
       );
       const endTime = Date.now();
       const duration = (endTime - startTime) / 1000;

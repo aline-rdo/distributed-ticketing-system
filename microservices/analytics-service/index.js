@@ -1,31 +1,128 @@
-import express from "express";
+import grpc from "@grpc/grpc-js";
+import protoLoader from "@grpc/proto-loader";
+import { fileURLToPath } from "node:url";
 
-const app = express();
-app.use(express.json());
-app.get("/health", (req, res) => res.json({ status: "ok" }));
+const checkoutPath = fileURLToPath(
+  new URL("../../proto/checkout.proto", import.meta.url)
+);
 
-app.post("/events", (req, res) => {
-  const { type, data } = req.body || {};
-  if (!data || typeof data.userId !== "string" || !data.userId.trim()) {
-    return res.status(400).json({ error: "Event data with a userId is required" });
+const healthPath = fileURLToPath(
+  new URL("../../proto/health.proto", import.meta.url)
+);
+
+const loaderOptions = {
+  keepCase: true,
+  defaults: false,
+  oneofs: true,
+};
+
+const checkout = grpc.loadPackageDefinition(
+  protoLoader.loadSync(checkoutPath, loaderOptions)
+).cin0143.entrega1;
+
+const health = grpc.loadPackageDefinition(
+  protoLoader.loadSync(healthPath, loaderOptions)
+).grpc.health.v1;
+
+const invalidArgument = (message) => ({
+  code: grpc.status.INVALID_ARGUMENT,
+  details: message,
+});
+
+const validText = (value) =>
+  typeof value === "string" && value.trim().length > 0;
+
+function validCart(cart) {
+  return Array.isArray(cart) &&
+    cart.length > 0 &&
+    cart.every((item) =>
+      item &&
+      Object.hasOwn(item, "price") &&
+      Number.isFinite(item.price) &&
+      item.price >= 0
+    );
+}
+
+function recordEvent(call, callback) {
+  const request = call.request;
+
+  const fields = {
+    payments: "payment",
+    tickets: "ticket",
+    emails: "email",
+  };
+
+  const field = fields[request.type];
+  const event = field ? request[field] : undefined;
+
+  if (!field || request.data !== field || !event ||
+      !validText(event.userId)) {
+    return callback(invalidArgument("Invalid event"));
   }
-  const { userId, total, paymentResult, ticketId, ticketResult, emailResult } = data;
-  if (type === "payments" && Number.isFinite(total) && total > 0 && paymentResult === "success") {
-    console.log(`Analytics - User ${userId} made a payment of €${total}. Payment result: ${paymentResult}`);
-  } else if (type === "tickets" && typeof ticketId === "string" && ticketId.trim() && ticketResult === "success") {
-    console.log(`Analytics - User ${userId} created ticket ${ticketId}. Ticket result: ${ticketResult}`);
-  } else if (type === "emails" && typeof ticketId === "string" && ticketId.trim() && emailResult === "success") {
-    console.log(`Analytics - User ${userId} received email for ticket ${ticketId}. Email result: ${emailResult}`);
+
+  if (request.type === "payments") {
+    if (!Number.isFinite(event.total) ||
+        event.total <= 0 ||
+        event.paymentResult !== "success" ||
+        !validCart(event.cart)) {
+      return callback(invalidArgument("Invalid payment event"));
+    }
+
+    console.log(
+      `Analytics - User ${event.userId} made a payment of €${event.total}. Payment result: ${event.paymentResult}`
+    );
+  } else if (request.type === "tickets") {
+    if (!validText(event.ticketId) ||
+        event.ticketResult !== "success") {
+      return callback(invalidArgument("Invalid ticket event"));
+    }
+
+    console.log(
+      `Analytics - User ${event.userId} created ticket ${event.ticketId}. Ticket result: ${event.ticketResult}`
+    );
   } else {
-    return res.status(400).json({ error: "Unknown event type or invalid event data" });
-  }
-  res.status(201).json({ status: "recorded" });
-});
+    if (!validText(event.ticketId) ||
+        event.emailResult !== "success") {
+      return callback(invalidArgument("Invalid email event"));
+    }
 
-app.use((error, req, res, next) => {
-  console.error(error.message);
-  res.status(error.status || 500).json({ error: error.status === 400 ? "Invalid JSON body" : error.message });
-});
+    console.log(
+      `Analytics - User ${event.userId} received email for ticket ${event.ticketId}. Email result: ${event.emailResult}`
+    );
+  }
+
+  callback(null, { status: "recorded" });
+}
+
+const server = new grpc.Server();
+
+server.addService(
+  checkout.AnalyticsService.service,
+  { recordEvent }
+);
+
+server.addService(
+  health.Health.service,
+  {
+    check(call, callback) {
+      callback(null, { status: "SERVING" });
+    },
+  }
+);
 
 const port = process.env.PORT || 8003;
-app.listen(port, "0.0.0.0", () => console.log(`Analytics service is running on port ${port}`));
+
+server.bindAsync(
+  `0.0.0.0:${port}`,
+  grpc.ServerCredentials.createInsecure(),
+  (error) => {
+    if (error) {
+      console.error(error);
+      process.exit(1);
+    }
+
+    console.log(
+      `Analytics gRPC service running on port ${port}`
+    );
+  }
+);
