@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tickets-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tickets-service
+  template:
+    metadata:
+      labels:
+        app: tickets-service
+    spec:
+      containers:
+        - name: tickets-service
+          image: docker.io/cin0143/tickets-service:entrega-2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          env:
+            - name: PORT
+              value: "8001"
+            - name: EMAIL_SERVICE_ADDRESS
+              value: "email-service:8002"
+            - name: ANALYTICS_SERVICE_ADDRESS
+              value: "analytics-service:8003"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "64Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          readinessProbe:
+            grpc:
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            grpc:
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tickets-service
+spec:
+  type: ClusterIP
+  selector:
+    app: tickets-service
+  ports:
+    - port: 8001
+      targetPort: 8001
+      protocol: TCP
