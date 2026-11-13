@@ -21,6 +21,8 @@ spec:
           env:
             - name: PORT
               value: "8000"
+            - name: REQUEST_MEMORY_MB
+              value: "10"
             - name: FRONTEND_ORIGIN
               value: "http://localhost:3000"
             - name: TICKETS_SERVICE_ADDRESS
