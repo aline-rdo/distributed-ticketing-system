@@ -1,163 +1,149 @@
-# Compra de ingressos com microsserviços gRPC
+# Sistema Distribuído de Venda de Ingressos
 
-Projeto da disciplina **CIN0143 — Introdução a Sistemas Distribuídos e
-Redes de Computadores**, do **Centro de Informática da Universidade Federal de
-Pernambuco (CIn/UFPE)**. O projeto será usado para explorar diferentes formas de
-comunicação entre serviços, como HTTP e gRPC, além de temas como falhas parciais,
-orquestração com Kubernetes e escalabilidade horizontal.
+Projeto acadêmico de venda de ingressos desenvolvido com **arquitetura de microsserviços**, comunicação **HTTP e gRPC**, conteinerização com **Docker** e orquestração com **Kubernetes**. O sistema também demonstra **escalabilidade horizontal automatizada** por meio de um **Horizontal Pod Autoscaler (HPA)** baseado no consumo de memória.
 
-A aplicação contém um frontend em Next.js e quatro serviços em Node.js. Nesta
-entrega, o frontend continua fazendo a primeira chamada HTTP com Axios para o
-serviço de pagamento, e os backends passam a se comunicar por gRPC em um fluxo
-síncrono: cada etapa da compra aguarda a resposta da próxima antes de retornar.
-A execução usa Docker Compose e os contratos gRPC ficam em `proto/`.
+Desenvolvido no contexto da disciplina **CIN0143 — Introdução a Sistemas Distribuídos e Redes de Computadores**, do **Centro de Informática da Universidade Federal de Pernambuco (CIn/UFPE)**.
 
-## Como executar
+> **Escopo acadêmico:** pagamentos e envios de e-mail são simulados; a aplicação não efetua cobranças reais nem persiste transações.
 
-Com Docker e Docker Compose instalados, execute na raiz do repositório:
+## Visão geral
 
-```sh
+A aplicação contém um frontend em **Next.js** e quatro microsserviços em **Node.js**. O frontend inicia o checkout por HTTP utilizando Axios; a sequência entre os serviços de backend é síncrona e utiliza gRPC, com contratos definidos em Protocol Buffers.
+
+### Arquitetura
+
+```mermaid
+flowchart LR
+    U[Usuário] --> F[Frontend · Next.js]
+    F -->|HTTP · Axios| P[Payment Service]
+    P -->|gRPC| T[Tickets Service]
+    T -->|gRPC| E[Email Service]
+    P -.->|Eventos gRPC| A[Analytics Service]
+    T -.->|Eventos gRPC| A
+    E -.->|Eventos gRPC| A
+```
+
+| Componente | Responsabilidade | Porta |
+| --- | --- | --- |
+| `frontend` | Interface de compra e envio da solicitação HTTP | `3000` |
+| `payment-service` | Processamento simulado do pagamento e coordenação do checkout | `8000` (HTTP) |
+| `tickets-service` | Geração de identificadores únicos para os ingressos | `8001` (gRPC interna) |
+| `email-service` | Simulação de envio de confirmação por e-mail | `8002` (gRPC interna) |
+| `analytics-service` | Registro de eventos de pagamento, ingresso e e-mail nos logs | `8003` (gRPC interna) |
+
+### Fluxo de compra
+
+1. O frontend envia os dados da compra ao `payment-service` por HTTP.
+2. O pagamento é simulado e um evento é enviado ao `analytics-service` por gRPC.
+3. O `payment-service` chama o `tickets-service`, que gera um identificador UUID para o ingresso.
+4. O `tickets-service` solicita ao `email-service` a confirmação simulada.
+5. Os serviços registram eventos no `analytics-service`, e a resposta consolidada retorna ao frontend.
+
+Os contratos gRPC estão em [`proto/checkout.proto`](proto/checkout.proto) e [`proto/health.proto`](proto/health.proto).
+
+## Tecnologias e conceitos
+
+- **Next.js e Node.js:** interface web e microsserviços.
+- **HTTP, Axios, gRPC e Protocol Buffers:** comunicação entre componentes.
+- **Docker e Docker Compose:** criação e execução dos contêineres em ambiente local.
+- **Kubernetes:** Deployments, Services, verificações de saúde e gerenciamento de réplicas.
+- **Horizontal Pod Autoscaler (HPA):** escalabilidade do serviço de pagamento por uso de memória.
+- **GitHub Actions:** verificação automatizada das entregas acadêmicas.
+
+## Executando localmente com Docker Compose
+
+**Pré-requisitos:** Docker e Docker Compose instalados. A primeira construção das imagens exige acesso à internet.
+
+Na raiz do repositório, execute:
+
+```bash
 docker compose up --build
 ```
 
-Acesse **http://localhost:3000** e clique em **Confirm & Pay**. Uma compra
-normal leva aproximadamente nove segundos: o pagamento, a criação do ingresso
-e o envio de e-mail simulam três segundos de processamento cada. Não são
-necessárias credenciais nem serviços externos para executar a aplicação. A
-construção inicial das imagens requer acesso à internet.
+Acesse **http://localhost:3000** e utilize o botão **Confirm & Pay** para simular uma compra.
 
-Para acompanhar os eventos registrados pelo serviço de analytics:
+Para acompanhar os eventos gerados:
 
-```sh
+```bash
 docker compose logs -f analytics-service
 ```
 
-Para encerrar a aplicação e remover os contêineres:
+Para encerrar e remover os contêineres:
 
-```sh
+```bash
 docker compose down
 ```
 
-## Componentes
+O processamento simulado inclui atrasos artificiais, resultando em aproximadamente nove segundos para uma compra normal.
 
-| Componente | Responsabilidade | Endereço |
-| --- | --- | --- |
-| `frontend` | Exibe a página de compra e solicita o pagamento usando Axios | http://localhost:3000 |
-| `payment-service` | Recebe a chamada HTTP externa, simula o pagamento e chama os demais serviços por gRPC | http://localhost:8000 |
-| `tickets-service` | Gera o identificador do ingresso por gRPC e solicita o envio de e-mail | Porta interna gRPC 8001 |
-| `email-service` | Simula o envio de e-mail por gRPC | Porta interna gRPC 8002 |
-| `analytics-service` | Registra eventos gRPC de pagamento, ingresso e e-mail nos logs | Porta interna gRPC 8003 |
+## Implantação e escalabilidade no Kubernetes
 
-Cada componente possui seu próprio Dockerfile e arquivo de dependências
-`package-lock.json`. O arquivo `compose.yaml`, na raiz, constrói as cinco imagens
-e aguarda as verificações de saúde dos serviços dos quais cada componente
-depende. Apenas o frontend e o serviço de pagamento expõem portas na máquina
-hospedeira.
+A configuração Kubernetes está no diretório [`k8s/`](k8s/), com manifests para os cinco componentes da aplicação e um HPA exclusivo do serviço de pagamento.
 
-## Fluxo de requisições
+| Configuração | Valor |
+| --- | --- |
+| Serviço escalável | `payment-service` |
+| Recurso monitorado | Memória |
+| Métrica do HPA | `AverageValue` |
+| Alvo médio | `35Mi` |
+| Réplicas mínimas | `1` |
+| Réplicas máximas | `3` |
+| Demais componentes | `1` réplica cada |
 
-1. O navegador envia `{ cart, total }` para `POST /payment-service` usando Axios.
-2. O serviço de pagamento simula o processamento, informa um evento de pagamento
-   ao analytics por gRPC e chama `TicketsService.CreateTicket` com
-   `{ userId, cart }`.
-3. O serviço de ingressos gera um UUID, informa um evento de criação de ingresso
-   ao analytics por gRPC e chama `EmailService.SendEmail` com
-   `{ userId, ticketId, ticketResult: "success" }`.
-4. O serviço de e-mail simula o envio e informa um evento ao analytics por gRPC.
-5. O serviço de pagamento retorna
-   `{ paymentResult, ticketId, ticketResult, emailResult }` após a conclusão
-   de toda a sequência da compra.
+**Pré-requisitos:** cluster Kubernetes configurado e acessível via `kubectl`, além das dependências exigidas pelos scripts acadêmicos. Os comandos abaixo pressupõem o ambiente da disciplina preparado, incluindo o cluster `cin0143`.
 
-Os contratos usados nessa comunicação estão em `proto/checkout.proto` e
-`proto/health.proto`. Os tipos de evento são `payments`, `tickets` e `emails`.
-O analytics escreve os eventos na saída padrão (`stdout`), sem armazená-los em
-um banco de dados. Os serviços internos disponibilizam health check gRPC pelo
-contrato `grpc.health.v1.Health.Check`; o pagamento mantém `GET /health` para a
-sonda HTTP do Compose.
-
-Para testar uma compra sem usar o navegador:
-
-```sh
-curl --fail-with-body http://localhost:8000/payment-service \
-  -H 'Content-Type: application/json' \
-  -d '{"cart":[{"id":1,"name":"Friday","price":125}],"total":131.25}'
-```
-
-## Simulações e falhas
-
-A autenticação sempre aceita a requisição e atribui um identificador aleatório
-ao usuário. Os pagamentos não realizam cobranças, os e-mails não são enviados
-e os dados não são persistidos. Os dados do cartão, o endereço de e-mail, o
-cronômetro de reserva e o botão de remoção de ingressos no frontend são
-exemplos visuais, sem funcionalidades reais de gerenciamento da compra.
-
-Corpos de requisição inválidos retornam HTTP 400 no pagamento ou
-`INVALID_ARGUMENT` nos RPCs internos. Uma falha no serviço de ingressos retorna
-HTTP 502 para a chamada externa, e o frontend informa que a reserva falhou. Uma
-falha no envio de e-mail é propagada pelo serviço de ingressos. Falhas retornadas
-pelo analytics são registradas nos logs sem impedir a conclusão da compra.
-
-As chamadas de aplicação não configuram timeouts ou deadlines. Os testes, as
-sondas de saúde e o job de CI usam limites próprios apenas para evitar execuções
-travadas. Os atrasos artificiais de três segundos nos arquivos `db.js` continuam
-ativos e não devem ser removidos.
-
-Não há novas tentativas automáticas, reversão de operações ou transações
-distribuídas. Um pagamento pode ser concluído antes de ocorrer uma falha na
-criação do ingresso ou no envio de e-mail. Repetir uma compra que falhou pode
-repetir ações já concluídas. Essa versão básica torna visíveis os problemas de acoplamento síncrono entre serviços e os efeitos de falhas parciais.
-
-## Testes e verificações
-
-Os testes são executados automaticamente pelo GitHub Actions. Vocês podem
-acompanhar os resultados na aba **Actions** do repositório para verificar se a
-entrega atende aos requisitos avaliados pelos testes. Em caso de falha, consultem
-os detalhes da execução para identificar o que precisa ser corrigido.
-
-Para que a verificação automática das entregas funcione, as branches devem ter
-**exatamente** os seguintes nomes:
-
-- `entrega-1`
-- `entrega-2`
-- `entrega-3`
-
-### Entrega 1 — gRPC
-
-Consulte os [requisitos da entrega 1](requisitos/entrega-1.md). Os contratos,
-os testes e o workflow estão disponíveis em `main`; esta branch contém a
-implementação de referência usando gRPC.
-
-A avaliação é automatizada. Os alunos devem preservar os testes e workflows
-fornecidos; a equipe docente deve controlar a versão oficial da avaliação usada
-para atribuir notas, independentemente dos arquivos enviados.
-
-### Entrega 2 — Kubernetes
-
-Consulte os [requisitos da entrega 2](requisitos/entrega-2.md). O setup existente
-constrói as imagens e prepara os cinco componentes no cluster `cin0143`.
-
-### Entrega 3 — autoscaling por memória
-
-Consulte os [requisitos da entrega 3](requisitos/entrega-3.md). A atividade é
-investigar o consumo de memória e configurar o Deployment e o HPA do pagamento.
-Os demais componentes continuam com uma réplica. Esta branch contém a solução
-de referência e a infraestrutura de avaliação fornecida aos alunos.
-
-Com o cluster da Entrega 2 ativo:
-
-```sh
+```bash
+# Preparar os serviços no cluster
 python3 tests/entrega-2/setup_k8s.py
+
+# Instalar e aguardar o Metrics Server
 kubectl apply -f tests/entrega-3/metrics-server.yaml
 kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s
-# Após criar ou alterar os manifests da Entrega 3:
+
+# Aplicar os manifests e inspecionar o estado
 kubectl apply -f k8s/
-kubectl rollout status deployment/payment-service --timeout=120s
+kubectl get deployments
+kubectl get hpa
+```
+
+A avaliação de escalabilidade pode ser executada com o cluster preparado:
+
+```bash
 python3 tests/entrega-3/test_autoscaling.py
 ```
 
-O teste executa compras dentro do cluster, acompanha o HPA e verifica o scale-up
-sem reinícios ou `OOMKilled`.
+Durante os testes, o HPA elevou a quantidade de réplicas disponíveis do serviço de pagamento em resposta à carga. O avaliador confirmou a conclusão das compras, o scale-up e a ausência de reinícios ou eventos `OOMKilled`. As três entregas também tiveram execução bem-sucedida nos workflows de avaliação do GitHub Actions da disciplina.
 
-## Licença
+## Organização do repositório
 
-Este projeto está licenciado sob a [licença MIT](LICENSE).
+```text
+frontend/          Interface web em Next.js
+microservices/      Serviços de pagamento, ingressos, e-mail e analytics
+proto/             Contratos Protocol Buffers para comunicação gRPC
+k8s/               Deployments, Services e HPA do Kubernetes
+tests/             Testes e infraestrutura de avaliação acadêmica
+requisitos/        Enunciados das entregas
+compose.yaml       Orquestração local com Docker Compose
+```
+
+### Histórico das entregas
+
+| Branch | Evolução do projeto |
+| --- | --- |
+| `main` | Código-base e contratos iniciais |
+| `entrega-1` | Comunicação gRPC entre microsserviços |
+| `entrega-2` | Implantação da aplicação no Kubernetes |
+| `entrega-3` | Escalabilidade horizontal com HPA baseado em memória |
+| `portfolio` | Apresentação e documentação da versão final |
+
+As branches das entregas permanecem preservadas para consulta ao desenvolvimento incremental e ao histórico de commits.
+
+## Limitações e decisões de projeto
+
+Esta implementação foi criada para estudar sistemas distribuídos, não para operar comercialmente. A autenticação é simulada; pagamentos e e-mails não são reais; os dados não são persistidos; e os eventos de analytics são registrados na saída padrão. O checkout usa chamadas síncronas, sem tentativas automáticas, deadlines ou transações distribuídas. Essas decisões permitem observar os efeitos de falhas parciais e o acoplamento entre serviços.
+
+## Autoria e créditos
+
+Projeto desenvolvido como atividade acadêmica em equipe na disciplina **CIN0143 (CIn/UFPE)**. A estrutura e os materiais acadêmicos originais foram fornecidos no contexto da disciplina; a evolução das entregas está registrada no histórico de commits, preservando a autoria de cada contribuição.
+
+O arquivo [`LICENSE`](LICENSE) mantém a licença **MIT** e o aviso de copyright original de **Miguel Oliveira (2026)**.
